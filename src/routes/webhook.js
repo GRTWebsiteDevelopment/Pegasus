@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const calendarService = require('../services/calendarService');
+const realCalendarService = require('../services/realCalendarService');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -33,7 +33,7 @@ router.post('/calendar', async (req, res) => {
       eventId: req.body.eventId,
     };
 
-    const result = await calendarService.handleCalendarWebhook(webhookData);
+    const result = await realCalendarService.handleCalendarWebhook(webhookData);
     res.status(200).json(result);
   } catch (error) {
     logger.error('Error in POST /webhook/calendar', { error: error.message });

@@ -286,66 +286,16 @@ async function getEventById(eventId) {
 
 /**
  * Handles incoming calendar webhooks from Google Calendar
+ * Uses WebhookProcessor for full pipeline: parse, update, notify
  * @param {Object} webhookData - Webhook payload
  * @returns {Promise<Object>} Processing result
  */
 async function handleCalendarWebhook(webhookData) {
+  const { WebhookProcessor } = require('./webhookProcessor');
+  
   try {
-    logger.info('Processing calendar webhook', {
-      resourceId: webhookData.resourceId,
-      resourceState: webhookData.resourceState,
-      channelId: webhookData.channelId,
-    });
-
-    // Validate webhook authenticity
-    const channelToken = webhookData.channelToken;
-    if (!channelToken) {
-      throw new CalendarError('Missing channel token in webhook', {
-        channelId: webhookData.channelId,
-      });
-    }
-
-    const { resourceState, resourceId, eventId } = webhookData;
-
-    let result;
-    switch (resourceState) {
-      case 'exists':
-      case 'sync':
-        // Event was created or updated
-        if (eventId) {
-          const event = await getEventById(eventId);
-          result = {
-            action: 'synced',
-            event: event.event,
-          };
-        } else {
-          result = {
-            action: 'sync_notification',
-            resourceId,
-          };
-        }
-        break;
-
-      case 'not_exists':
-        // Event was deleted
-        result = {
-          action: 'deleted',
-          eventId,
-        };
-        break;
-
-      default:
-        result = {
-          action: 'unknown',
-          resourceState,
-        };
-    }
-
-    logger.info('Calendar webhook processed successfully', { result });
-    return {
-      success: true,
-      result,
-    };
+    // Use webhook processor for full pipeline
+    return await WebhookProcessor.process(webhookData);
   } catch (error) {
     logger.error('Failed to process calendar webhook', {
       error: error.message,
