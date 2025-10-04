@@ -19,8 +19,22 @@ class EventCreationError extends GoogleApiError {
   }
 }
 
+class EventUpdateError extends GoogleApiError {
+  constructor(message = 'Failed to update event', statusCode = 500) {
+    super(message, statusCode);
+  }
+}
+
+class EventRetrievalError extends GoogleApiError {
+  constructor(message = 'Failed to retrieve event', statusCode = 404) {
+    super(message, statusCode);
+  }
+}
+
 module.exports = {
   ApiError,
   GoogleApiError,
   EventCreationError,
+  EventUpdateError,
+  EventRetrievalError,
 };

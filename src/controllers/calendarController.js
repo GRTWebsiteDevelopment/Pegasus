@@ -1,6 +1,10 @@
 const calendarService = require('../services/calendarService');
 const emailService = require('../services/emailService');
-const { EventCreationError } = require('../utils/errors');
+const {
+  EventCreationError,
+  EventUpdateError,
+  EventRetrievalError,
+} = require('../utils/errors');
 
 const createEvent = async (req, res) => {
   try {
@@ -20,6 +24,9 @@ const updateEvent = async (req, res) => {
     const event = await calendarService.updateCalendarEvent(req.params.id, req.body);
     res.status(200).json(event);
   } catch (error) {
+    if (error instanceof EventUpdateError || error instanceof EventRetrievalError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to update event' });
   }
 };
@@ -29,6 +36,9 @@ const getEvent = async (req, res) => {
     const event = await calendarService.getEventById(req.params.id);
     res.status(200).json(event);
   } catch (error) {
+    if (error instanceof EventRetrievalError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to get event' });
   }
 };

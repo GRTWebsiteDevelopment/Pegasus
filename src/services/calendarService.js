@@ -1,7 +1,12 @@
 const { calendar } = require('../utils/googleClient');
 const config = require('../config');
 const logger = require('../utils/logger');
-const { EventCreationError } = require('../utils/errors');
+const { withRetry } = require('../utils/retry');
+const {
+  EventCreationError,
+  EventUpdateError,
+  EventRetrievalError,
+} = require('../utils/errors');
 const emailService = require('../services/emailService');
 const idempotencyCache = require('../utils/idempotencyCache');
 
@@ -47,20 +52,29 @@ const createCalendarEvent = async (eventData) => {
 };
 
 const updateCalendarEvent = async (eventId, eventData) => {
-  try {
+  const operation = async () => {
+    // First, get the existing event to support partial updates
+    const existingEvent = await module.exports.getEventById(eventId);
+
+    const updatedEvent = { ...existingEvent, ...eventData };
+
     const response = await calendar.events.update({
       calendarId: config.GOOGLE_CALENDAR_ID,
       eventId,
-      resource: eventData,
+      resource: updatedEvent,
     });
     return response.data;
+  };
+
+  try {
+    return await withRetry(operation, 3, 1000, `updateCalendarEvent(${eventId})`);
   } catch (error) {
     logger.error(`Error updating event ${eventId}:`, {
       message: error.message,
       stack: error.stack,
       response: error.response?.data,
     });
-    return null;
+    throw new EventUpdateError(`Failed to update event ${eventId}`);
   }
 };
 
@@ -101,19 +115,23 @@ const handleCalendarWebhook = async (headers, body) => {
 };
 
 const getEventById = async (eventId) => {
-  try {
+  const operation = async () => {
     const response = await calendar.events.get({
       calendarId: config.GOOGLE_CALENDAR_ID,
       eventId,
     });
     return response.data;
+  };
+
+  try {
+    return await withRetry(operation, 3, 1000, `getEventById(${eventId})`);
   } catch (error) {
     logger.error(`Error getting event ${eventId}:`, {
       message: error.message,
       stack: error.stack,
       response: error.response?.data,
     });
-    return null;
+    throw new EventRetrievalError(`Failed to retrieve event ${eventId}`);
   }
 };
 
