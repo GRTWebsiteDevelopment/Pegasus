@@ -4,6 +4,7 @@ import { googleCalendarClient } from '../clients/googleCalendarClient';
 import { sendEmailNotification } from './notificationService';
 import { logger } from '../logger';
 import { CalendarApiError } from '../errors/CalendarApiError';
+import * as idem from '../store/idempotency';
 
 export async function createCalendarEvent(payload: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
   logger.info({ title: payload.title, attendees: payload.attendees?.length || 0 }, 'creating calendar event');
@@ -44,9 +45,71 @@ export async function getEventById(id: string): Promise<CalendarEvent | null> {
 }
 
 export async function handleCalendarWebhook(payload: WebhookPayload): Promise<void> {
-  // In a real implementation, verify signatures and process event
-  if (payload.action === 'deleted') {
-    // noop for mock
+  logger.info({ payload }, 'webhook received');
+  // basic validation
+  if (!payload?.eventId || !payload?.action || !payload?.timestampIso) {
+    logger.error('invalid webhook payload');
+    return;
+  }
+
+  const key = idem.makeKey({ eventId: payload.eventId, action: payload.action, timestampIso: payload.timestampIso });
+  if (idem.has(key)) {
+    logger.info({ key }, 'webhook skipped (idempotent)');
+    return;
+  }
+  logger.info({ key }, 'webhook validated');
+
+  try {
+    if (payload.action === 'deleted') {
+      // For simplicity, mark idempotent and return; deletion not persisted in mock
+      idem.add(key);
+      logger.info({ eventId: payload.eventId }, 'webhook applied (deleted)');
+      return;
+    }
+
+    // fetch latest from Google and upsert internal record
+    const latest = await googleCalendarClient.getEvent(payload.eventId);
+    let updated: CalendarEvent;
+    try {
+      updated = await updateCalendarEvent(latest.id, {
+        title: latest.title,
+        description: latest.description,
+        location: latest.location,
+        startTimeIso: latest.startTimeIso,
+        endTimeIso: latest.endTimeIso,
+        attendees: latest.attendees,
+        metadata: latest.metadata,
+      });
+    } catch (updateErr: any) {
+      // If internal record is missing, upsert by saving latest snapshot
+      if (updateErr && typeof updateErr.message === 'string' && updateErr.message.includes('Event not found')) {
+        logger.info({ id: latest.id }, 'internal event missing; upserting from webhook');
+        googleCalendarMock.saveEvent(latest);
+        updated = latest;
+      } else {
+        throw updateErr;
+      }
+    }
+
+    // notify primary attendee on updates
+    const primary = updated.attendees && updated.attendees[0];
+    if (primary) {
+      await sendEmailNotification({
+        to: primary,
+        subject: `Event ${payload.action}: ${updated.title}`,
+        html: `<p>Your event ${updated.title} was ${payload.action}.</p>`
+      });
+    }
+
+    idem.add(key);
+    logger.info({ eventId: payload.eventId }, 'webhook applied (updated)');
+  } catch (err: any) {
+    if (err instanceof CalendarApiError) {
+      logger.error({ status: err.status, code: err.code }, 'calendar api error processing webhook');
+      throw err;
+    }
+    logger.error({ err }, 'unexpected webhook processing error');
+    throw err;
   }
 }
 
