@@ -1,15 +1,31 @@
 import { CalendarEvent, WebhookPayload } from '../types';
 import { googleCalendarMock } from '../clients/googleCalendarMock';
+import { googleCalendarClient } from '../clients/googleCalendarClient';
 import { sendEmailNotification } from './notificationService';
+import { logger } from '../logger';
+import { CalendarApiError } from '../errors/CalendarApiError';
 
 export async function createCalendarEvent(payload: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
-  const event = await googleCalendarMock.createEvent(payload);
-  await sendEmailNotification({
-    to: (payload.attendees && payload.attendees[0]) || 'test@example.com',
-    subject: `Event Created: ${payload.title}`,
-    html: `<p>Your event ${payload.title} was created.</p>`
-  });
-  return event;
+  logger.info({ title: payload.title, attendees: payload.attendees?.length || 0 }, 'creating calendar event');
+  try {
+    const event = await googleCalendarClient.createEvent(payload);
+    // save to in-memory mock store for local reads/tests
+    googleCalendarMock.saveEvent(event);
+    await sendEmailNotification({
+      to: (payload.attendees && payload.attendees[0]) || 'test@example.com',
+      subject: `Event Created: ${payload.title}`,
+      html: `<p>Your event ${payload.title} was created.</p>`
+    });
+    logger.info({ id: event.id, title: event.title }, 'calendar event created');
+    return event;
+  } catch (err: any) {
+    if (err instanceof CalendarApiError) {
+      logger.error({ status: err.status, code: err.code, details: err.details }, 'calendar api error on create');
+      throw err;
+    }
+    logger.error({ err }, 'unexpected error creating calendar event');
+    throw new CalendarApiError('Create event failed', { status: 500, details: err, endpoint: 'google' });
+  }
 }
 
 export async function updateCalendarEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent> {

@@ -26,6 +26,11 @@ export const googleCalendarMock = {
   async listEvents(): Promise<CalendarEvent[]> {
     return Array.from(events.values());
   },
+
+  saveEvent(event: CalendarEvent): CalendarEvent {
+    events.set(event.id, event);
+    return event;
+  },
 };
 
 export type GoogleCalendarMock = typeof googleCalendarMock;

@@ -9,6 +9,7 @@ export const env = cleanEnv(process.env, {
   LOG_LEVEL: str({ default: 'info' }),
   GOOGLE_API_KEY: str({ default: 'mock-google-api-key' }),
   GOOGLE_OAUTH_TOKEN: str({ default: 'mock-google-oauth-token' }),
+  GOOGLE_CALENDAR_ID: str({ default: 'primary' }),
   EMAIL_API_KEY: str({ default: 'mock-email-api-key' }),
   BASE_URL: url({ default: 'http://localhost:3000' }),
   ENABLE_PRETTY_LOGS: bool({ default: true }),
