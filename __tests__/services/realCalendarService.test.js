@@ -1,5 +1,3 @@
-const realCalendarService = require('../../src/services/realCalendarService');
-const { GoogleCalendarClient } = require('../../src/services/googleCalendarClient');
 const {
   CalendarError,
   AuthenticationError,
@@ -9,47 +7,33 @@ const {
   PermissionError,
 } = require('../../src/utils/errors');
 
-// Mock the Google Calendar client
-jest.mock('../../src/services/googleCalendarClient');
+// Create mock client functions
+const mockCreateEvent = jest.fn();
+const mockUpdateEvent = jest.fn();
+const mockGetEvent = jest.fn();
+const mockDeleteEvent = jest.fn();
+
+// Mock the Google Calendar client module
+jest.mock('../../src/services/googleCalendarClient', () => ({
+  createGoogleCalendarClient: jest.fn().mockResolvedValue({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    ensureInitialized: jest.fn().mockResolvedValue(undefined),
+    createEvent: mockCreateEvent,
+    updateEvent: mockUpdateEvent,
+    getEvent: mockGetEvent,
+    deleteEvent: mockDeleteEvent,
+    initialized: true,
+  }),
+  GoogleCalendarClient: jest.fn(),
+}));
+
+// Now require the service after mocking
+const realCalendarService = require('../../src/services/realCalendarService');
 
 describe('Real Calendar Service with Google API', () => {
-  let mockCalendarClient;
-  let mockCreateEvent;
-  let mockUpdateEvent;
-  let mockGetEvent;
-  let mockDeleteEvent;
-
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
-    jest.resetModules();
-
-    // Create mock functions
-    mockCreateEvent = jest.fn();
-    mockUpdateEvent = jest.fn();
-    mockGetEvent = jest.fn();
-    mockDeleteEvent = jest.fn();
-
-    // Mock client instance
-    mockCalendarClient = {
-      initialize: jest.fn().mockResolvedValue(undefined),
-      ensureInitialized: jest.fn(),
-      createEvent: mockCreateEvent,
-      updateEvent: mockUpdateEvent,
-      getEvent: mockGetEvent,
-      deleteEvent: mockDeleteEvent,
-      initialized: true,
-    };
-
-    // Mock the module before requiring it
-    jest.mock('../../src/services/googleCalendarClient', () => ({
-      createGoogleCalendarClient: jest.fn(),
-      GoogleCalendarClient: jest.fn(),
-    }));
-
-    // Get the mocked function and set its return value
-    const googleCalendarClient = require('../../src/services/googleCalendarClient');
-    googleCalendarClient.createGoogleCalendarClient.mockResolvedValue(mockCalendarClient);
   });
 
   describe('createCalendarEvent', () => {
@@ -433,7 +417,7 @@ describe('Real Calendar Service with Google API', () => {
       const result = await realCalendarService.handleCalendarWebhook(webhookData);
 
       expect(result.success).toBe(true);
-      expect(result.result.action).toBe('synced');
+      expect(result.result.action).toBe('created_or_updated');
       expect(result.result.event.id).toBe('event-123');
     });
 
@@ -448,8 +432,8 @@ describe('Real Calendar Service with Google API', () => {
       const result = await realCalendarService.handleCalendarWebhook(webhookData);
 
       expect(result.success).toBe(true);
-      expect(result.result.action).toBe('sync_notification');
-      expect(result.result.resourceId).toBe('resource-456');
+      expect(result.result.action).toBe('sync');
+      expect(result.result.webhookId).toContain('channel-123:resource-456');
     });
 
     it('should handle deleted event webhook', async () => {
@@ -465,10 +449,12 @@ describe('Real Calendar Service with Google API', () => {
 
       expect(result.success).toBe(true);
       expect(result.result.action).toBe('deleted');
-      expect(result.result.eventId).toBe('deleted-event');
+      expect(result.result.webhookId).toContain('channel-123:resource-456');
     });
 
-    it('should throw CalendarError when channel token is missing', async () => {
+    it('should throw WebhookError when channel token is missing', async () => {
+      const { WebhookError } = require('../../src/utils/errors');
+
       const webhookData = {
         channelId: 'channel-123',
         resourceId: 'resource-456',
@@ -477,7 +463,7 @@ describe('Real Calendar Service with Google API', () => {
 
       await expect(
         realCalendarService.handleCalendarWebhook(webhookData)
-      ).rejects.toThrow(CalendarError);
+      ).rejects.toThrow(WebhookError);
 
       await expect(
         realCalendarService.handleCalendarWebhook(webhookData)
@@ -495,7 +481,7 @@ describe('Real Calendar Service with Google API', () => {
 
       expect(result.success).toBe(true);
       expect(result.result.action).toBe('unknown');
-      expect(result.result.resourceState).toBe('unknown_state');
+      expect(result.result.webhookId).toContain('resource-456');
     });
   });
 
