@@ -15,6 +15,13 @@ describe('Webhook handling', () => {
       endTimeIso: new Date(Date.now() + 3600000).toISOString(),
       attendees: ['notify@example.com']
     });
+    (googleClient.googleCalendarClient.updateEvent as jest.Mock).mockResolvedValue({
+      id: 'evt_1',
+      title: 'Webinar',
+      startTimeIso: new Date().toISOString(),
+      endTimeIso: new Date(Date.now() + 3600000).toISOString(),
+      attendees: ['notify@example.com']
+    });
 
     await handleCalendarWebhook({ eventId: 'evt_1', action: 'updated', timestampIso: new Date().toISOString() });
 
@@ -24,6 +31,13 @@ describe('Webhook handling', () => {
 
   it('is idempotent (same payload processed once)', async () => {
     (googleClient.googleCalendarClient.getEvent as jest.Mock).mockResolvedValue({
+      id: 'evt_2',
+      title: 'Standup',
+      startTimeIso: new Date().toISOString(),
+      endTimeIso: new Date(Date.now() + 3600000).toISOString(),
+      attendees: ['dup@example.com']
+    });
+    (googleClient.googleCalendarClient.updateEvent as jest.Mock).mockResolvedValue({
       id: 'evt_2',
       title: 'Standup',
       startTimeIso: new Date().toISOString(),

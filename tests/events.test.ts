@@ -42,6 +42,13 @@ describe('Events API', () => {
     const createRes = await request(app).post('/events').send(baseEvent);
     const id = createRes.body.id;
 
+    (googleClient.googleCalendarClient.updateEvent as jest.Mock).mockResolvedValue({
+      id,
+      title: 'Updated',
+      startTimeIso: baseEvent.startTimeIso,
+      endTimeIso: baseEvent.endTimeIso,
+      attendees: baseEvent.attendees,
+    });
     const updateRes = await request(app).put(`/events/${id}`).send({ title: 'Updated' });
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.title).toBe('Updated');

@@ -13,6 +13,13 @@ describe('POST /webhook', () => {
       endTimeIso: new Date(Date.now() + 3600000).toISOString(),
       attendees: ['x@example.com']
     });
+    (googleClient.googleCalendarClient.updateEvent as jest.Mock).mockResolvedValue({
+      id: '123',
+      title: 'New Event',
+      startTimeIso: new Date().toISOString(),
+      endTimeIso: new Date(Date.now() + 3600000).toISOString(),
+      attendees: ['x@example.com']
+    });
     const res = await request(app)
       .post('/webhook')
       .send({ eventId: '123', action: 'created', timestampIso: new Date().toISOString() });

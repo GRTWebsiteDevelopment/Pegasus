@@ -33,6 +33,13 @@ describe('Services', () => {
       endTimeIso: new Date(Date.now() + 3600000).toISOString(),
       attendees: ['b@example.com']
     });
+    (googleClient.googleCalendarClient.updateEvent as jest.Mock).mockResolvedValue({
+      id: 'evt_update',
+      title: 'Standup Updated',
+      startTimeIso: new Date().toISOString(),
+      endTimeIso: new Date(Date.now() + 3600000).toISOString(),
+      attendees: ['b@example.com']
+    });
     const created = await createCalendarEvent({
       title: 'Standup',
       startTimeIso: new Date().toISOString(),

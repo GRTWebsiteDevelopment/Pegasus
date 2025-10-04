@@ -89,6 +89,50 @@ export const googleCalendarClient = {
     const data = await res.json();
     return mapGoogleToCalendarEvent(data);
   },
+
+  async updateEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent> {
+    const calendarId = env.GOOGLE_CALENDAR_ID;
+    const endpoint = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}?sendUpdates=all${env.GOOGLE_API_KEY ? `&key=${encodeURIComponent(env.GOOGLE_API_KEY)}` : ''}`;
+    const body: any = {
+      summary: updates.title,
+      description: updates.description,
+      location: updates.location,
+      start: updates.startTimeIso ? { dateTime: updates.startTimeIso } : undefined,
+      end: updates.endTimeIso ? { dateTime: updates.endTimeIso } : undefined,
+      attendees: updates.attendees?.map((email) => ({ email })),
+    };
+    // remove undefined keys to avoid API validation errors
+    Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
+
+    logger.info({ endpoint, id }, 'updating google calendar event');
+    let res: any;
+    try {
+      res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${env.GOOGLE_OAUTH_TOKEN}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err: any) {
+      logger.error({ err }, 'network error updating google calendar event');
+      throw new CalendarApiError('Network error calling Google Calendar', { status: 0, details: err, endpoint });
+    }
+
+    if (!res.ok) {
+      let details: any;
+      try { details = await res.json(); } catch { details = await res.text(); }
+      logger.error({ status: res.status, details }, 'google calendar api update error');
+      const code = typeof details?.error?.code === 'number' ? String(details.error.code) : details?.error?.status;
+      throw new CalendarApiError('Google Calendar API error', { status: res.status, code, details, endpoint });
+    }
+
+    const data = await res.json();
+    const event = mapGoogleToCalendarEvent(data);
+    logger.info({ id: event.id }, 'google calendar event updated');
+    return event;
+  },
 };
 
 export type GoogleCalendarClient = typeof googleCalendarClient;

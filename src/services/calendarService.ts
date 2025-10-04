@@ -4,6 +4,7 @@ import { googleCalendarClient } from '../clients/googleCalendarClient';
 import { sendEmailNotification } from './notificationService';
 import { logger } from '../logger';
 import { CalendarApiError } from '../errors/CalendarApiError';
+import { retry } from '../utils/retry';
 import * as idem from '../store/idempotency';
 
 export async function createCalendarEvent(payload: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
@@ -30,18 +31,60 @@ export async function createCalendarEvent(payload: Omit<CalendarEvent, 'id'>): P
 }
 
 export async function updateCalendarEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent> {
-  const updated = await googleCalendarMock.updateEvent(id, updates);
-  if (!updated) throw new Error('Event not found');
-  await sendEmailNotification({
-    to: (updated.attendees && updated.attendees[0]) || 'test@example.com',
-    subject: `Event Updated: ${updated.title}`,
-    html: `<p>Your event ${updated.title} was updated.</p>`
-  });
-  return updated;
+  logger.info({ id, updates }, 'updating calendar event');
+  try {
+    const updated = await retry(() => googleCalendarClient.updateEvent(id, updates), {
+      retries: 2,
+      baseMs: 50,
+      onRetry: (attempt, error) => logger.warn({ attempt, error }, 'retry updateCalendarEvent'),
+    });
+
+    // persist to in-memory store
+    const saved = await googleCalendarMock.updateEvent(updated.id, updated);
+    if (!saved) {
+      logger.info({ id }, 'internal record missing; saving updated snapshot');
+      googleCalendarMock.saveEvent(updated);
+    }
+
+    // notify
+    const to = (updated.attendees && updated.attendees[0]) || 'test@example.com';
+    await sendEmailNotification({
+      to,
+      subject: `Event Updated: ${updated.title}`,
+      html: `<p>Your event ${updated.title} was updated.</p>`
+    });
+    logger.info({ id: updated.id }, 'calendar event updated');
+    return updated;
+  } catch (err: any) {
+    if (err instanceof CalendarApiError) {
+      logger.error({ status: err.status, code: err.code }, 'calendar api error on update');
+      throw err;
+    }
+    logger.error({ err }, 'unexpected error updating calendar event');
+    throw err;
+  }
 }
 
 export async function getEventById(id: string): Promise<CalendarEvent | null> {
-  return googleCalendarMock.getEvent(id);
+  logger.info({ id }, 'getEventById called');
+  const local = await googleCalendarMock.getEvent(id);
+  if (local) return local;
+  try {
+    const remote = await retry(() => googleCalendarClient.getEvent(id), {
+      retries: 1,
+      baseMs: 50,
+      onRetry: (attempt, error) => logger.warn({ attempt, error }, 'retry getEventById'),
+    });
+    googleCalendarMock.saveEvent(remote);
+    return remote;
+  } catch (err: any) {
+    if (err instanceof CalendarApiError) {
+      logger.error({ status: err.status, code: err.code }, 'calendar api error on getEventById');
+      return null;
+    }
+    logger.error({ err }, 'unexpected error in getEventById');
+    throw err;
+  }
 }
 
 export async function handleCalendarWebhook(payload: WebhookPayload): Promise<void> {
@@ -89,16 +132,6 @@ export async function handleCalendarWebhook(payload: WebhookPayload): Promise<vo
       } else {
         throw updateErr;
       }
-    }
-
-    // notify primary attendee on updates
-    const primary = updated.attendees && updated.attendees[0];
-    if (primary) {
-      await sendEmailNotification({
-        to: primary,
-        subject: `Event ${payload.action}: ${updated.title}`,
-        html: `<p>Your event ${updated.title} was ${payload.action}.</p>`
-      });
     }
 
     idem.add(key);
