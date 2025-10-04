@@ -35,7 +35,7 @@ const getEvent = async (req, res) => {
 
 const handleWebhook = async (req, res) => {
   try {
-    await calendarService.handleCalendarWebhook(req.body);
+    await calendarService.handleCalendarWebhook(req.headers, req.body);
     res.status(200).send();
   } catch (error) {
     res.status(500).json({ error: 'Failed to handle webhook' });

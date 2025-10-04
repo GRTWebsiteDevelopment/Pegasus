@@ -2,6 +2,8 @@ const { calendar } = require('../utils/googleClient');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { EventCreationError } = require('../utils/errors');
+const emailService = require('../services/emailService');
+const idempotencyCache = require('../utils/idempotencyCache');
 
 const createCalendarEvent = async (eventData) => {
   const { title, description, startTime, endTime, attendees } = eventData;
@@ -62,10 +64,40 @@ const updateCalendarEvent = async (eventId, eventData) => {
   }
 };
 
-const handleCalendarWebhook = async (webhookData) => {
-  // Mock implementation for handling a calendar webhook
-  console.log('Handling calendar webhook with data:', webhookData);
-  return { status: 'received' };
+const handleCalendarWebhook = async (headers, body) => {
+  const messageId = headers['x-goog-message-number'];
+  if (idempotencyCache.hasMessage(messageId)) {
+    logger.info(`Webhook message ${messageId} already processed.`);
+    return;
+  }
+  logger.info(`Processing webhook message ${messageId}...`);
+  idempotencyCache.addMessage(messageId);
+
+  const resourceId = headers['x-goog-resource-id'];
+  const event = await module.exports.getEventById(resourceId);
+
+  if (!event) {
+    logger.warn(`Event with resource ID ${resourceId} not found.`);
+    return;
+  }
+
+  const declinedAttendees = event.attendees?.filter(
+    (attendee) => attendee.responseStatus === 'declined'
+  );
+
+  if (declinedAttendees && declinedAttendees.length > 0) {
+    const organizer = event.organizer?.email;
+    if (organizer) {
+      const declinedEmails = declinedAttendees.map((a) => a.email).join(', ');
+      await emailService.sendEmailNotification(
+        organizer,
+        `Attendee declined event: ${event.summary}`,
+        `The following attendees have declined the event "${event.summary}": ${declinedEmails}`
+      );
+      logger.info(`Sent notification to organizer ${organizer} about declined attendees.`);
+    }
+  }
+  logger.info(`Webhook message ${messageId} applied.`);
 };
 
 const getEventById = async (eventId) => {

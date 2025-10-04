@@ -65,13 +65,17 @@ describe('Calendar API', () => {
   });
 
   it('should handle a webhook', async () => {
-    // This test doesn't involve googleClient, so no mock setup needed here.
+    // We are testing the controller forwarding the request.
+    // The service is mocked in the service-level tests.
+    // Here we just need to ensure the controller calls the service.
+    // The actual calendarService is not mocked here, but its dependencies are.
     const res = await request(app)
       .post('/api/webhook')
-      .send({
-        type: 'event.updated',
-        data: {},
-      });
+      .set({
+        'x-goog-message-number': '1',
+        'x-goog-resource-id': 'event-123',
+      })
+      .send({});
     expect(res.statusCode).toEqual(200);
   });
 });
