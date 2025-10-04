@@ -1,5 +1,6 @@
 const calendarService = require('../services/calendarService');
 const emailService = require('../services/emailService');
+const { EventCreationError } = require('../utils/errors');
 
 const createEvent = async (req, res) => {
   try {
@@ -7,6 +8,9 @@ const createEvent = async (req, res) => {
     await emailService.sendEmailNotification('admin@example.com', 'New Event Created', `Event ${event.id} has been created.`);
     res.status(201).json(event);
   } catch (error) {
+    if (error instanceof EventCreationError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to create event' });
   }
 };
